@@ -45,14 +45,14 @@ SHA-1: 75:F2:73:AF:01:93:EF:08:F3:F2:2F:8C:B2:EA:FE:8B:BC:A0:27:73
 
 ## Features
 
-- **PWA launcher** — Add any HTTPS website as a standalone home-screen app with its own icon, name, and theme color
+- **PWA launcher** — Add any HTTP or HTTPS website as a standalone home-screen app with its own icon, name, and theme color; URLs without a scheme default to HTTPS (`.onion` defaults to HTTP)
 - **Per-app isolation** — Each app gets its own cookie jar, local storage, and (Android 13+) dedicated WebView profile
 - **Ad blocking** — Built-in content blocker with per-app custom rules and tracker blocking
 - **Tor routing** — Route individual apps through Tor for anonymous browsing; requires GeckoView
 - **Reading mode** — Strip any page down to article text via the control center; powered by Mozilla Readability.js
 - **Translation** — In-page translation via Google Translate; configurable per app
 - **App lock** — Optional password or biometric lock per app or globally
-- **Privacy controls** — Always-incognito mode, cookie auto-wipe on exit, stealth recents, HTTPS enforcement per app
+- **Privacy controls** — Always-incognito mode, cookie auto-wipe on exit, stealth recents
 - **Panic button** — Long-press wipe in the control center: clears all sessions and deletes all apps
 - **Two browser engines** — Android System WebView (default) or Mozilla GeckoView (optional download)
 - **User-agent switching** — Chrome, Firefox, Safari, Edge, or custom user-agent per app
@@ -110,6 +110,8 @@ cd shellify
 
 The project uses **convention plugins** defined in `build-logic/` — no manual SDK path configuration is required beyond a standard Android Studio setup.
 
+To build on GitHub without a local Android SDK or release signing secrets, push the changes to your fork's `feat/http-sites` or `main` branch, then open **Actions → Build APK**. It runs automatically on push; **Run workflow** is also available once the workflow exists on the default branch. Download the installable debug APK from the `shellify-debug-apk` artifact. Debug builds use a different signing key from official releases.
+
 ---
 
 ## Architecture
@@ -154,7 +156,7 @@ Dependency direction: `feature → core:domain`, `core:* → core:domain`. Featu
 | User-agent override | Chrome, Firefox, Safari, Edge, or fully custom string per app |
 | Fullscreen mode | Hides system bars for immersive web apps |
 | Reading mode | Strip any article to clean text via the control center; Readability.js powered, sanitized before injection |
-| HTTPS enforcement | Force secure connections per app; rejects mixed-content upgrades |
+| URL schemes | HTTP and HTTPS supported; explicit schemes are preserved, with HTTPS as the default for bare hostnames |
 | Swipe to refresh | Pull-to-refresh with a per-app enable/disable toggle |
 | Control center | Floating toolbar: reload, translate, reading mode, ad blocking, Tor identity, panic wipe, and settings |
 
@@ -188,7 +190,7 @@ Dependency direction: `feature → core:domain`, `core:* → core:domain`. Featu
 | Cookie auto-wipe | Automatically clear cookies when the app goes to background |
 | Tracker blocking | EasyPrivacy domain list blocks trackers on top of ad blocking |
 | Stealth recents | Masks app content in the Android recents screen |
-| HTTPS enforcement | Rejects HTTP loads and upgrades mixed content per app |
+| HTTPS protection | HTTPS certificate validation remains enabled; System WebView blocks HTTP subresources on HTTPS pages |
 | Tor routing | Per-app anonymous routing via Guardian Project `tor-android`; circuit rotatable on demand |
 | Panic button | Long-press wipe from the control center — deletes all apps and clears all sessions atomically |
 
@@ -236,10 +238,10 @@ Two URI schemes are registered for importing app configurations:
 
 | Scheme | Example |
 |---|---|
-| Custom | `shellify://add?url=<base64url-encoded-https-url>&name=<app-name>` |
-| HTTPS | `https://shellify.app/add?url=<base64url-encoded-https-url>&name=<app-name>` |
+| Custom | `shellify://add?url=<base64url-encoded-web-url>&name=<app-name>` |
+| HTTPS | `https://shellify.app/add?url=<base64url-encoded-web-url>&name=<app-name>` |
 
-The URL parameter must be **Base64url-encoded** (no padding) and must decode to an `https://` URL — HTTP is rejected.
+The URL parameter must be **Base64url-encoded** (no padding) and must decode to a valid `http://` or `https://` URL with a non-empty host. Other schemes are rejected.
 
 A confirmation dialog showing the destination host is displayed before any app is added.
 

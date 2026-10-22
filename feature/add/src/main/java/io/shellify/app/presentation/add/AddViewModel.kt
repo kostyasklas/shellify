@@ -42,6 +42,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.net.URL
 import java.util.UUID
 
 data class AddUiState(
@@ -125,6 +126,7 @@ class AddViewModel(
     val uiState: StateFlow<AddUiState> = _state
 
     private var originalApp: WebApp? = null
+    private val urlSchemePattern = Regex("^[A-Za-z][A-Za-z0-9+.-]*://")
 
     init {
         if (appId != 0L) {
@@ -327,24 +329,13 @@ class AddViewModel(
             _state.update { it.copy(urlError = context.getString(R.string.add_url_error_blank)) }
             return null
         }
-        // .onion hosts are Tor hidden services: HTTPS is rarely available and the plain HTTP
-        // traffic is encrypted end-to-end by the Tor circuit. Allow http://*.onion as-is
-        // and normalize bare *.onion hostnames to http:// (never https://).
-        if (isOnionUrl(trimmed)) {
-            val normalized = if (!trimmed.startsWith("http")) "http://$trimmed" else trimmed
-            if (!isValidUrl(normalized)) {
-                _state.update { it.copy(urlError = context.getString(R.string.error_invalid_url)) }
-                return null
-            }
-            return normalized
+        val scheme = urlSchemePattern.find(trimmed)?.value
+        val normalized = when {
+            scheme != null -> scheme.lowercase() + trimmed.substring(scheme.length)
+            isOnionUrl(trimmed) -> "http://$trimmed"
+            else -> "https://$trimmed"
         }
-        // Explicitly typed http:// must be upgraded to https before saving.
-        if (trimmed.startsWith("http://")) {
-            _state.update { it.copy(urlError = context.getString(R.string.add_url_error_http)) }
-            return null
-        }
-        val normalized = if (!trimmed.startsWith("https://")) "https://$trimmed" else trimmed
-        if (!isValidHttpsUrl(normalized)) {
+        if (!isValidUrl(normalized)) {
             _state.update { it.copy(urlError = context.getString(R.string.error_invalid_url)) }
             return null
         }
@@ -356,18 +347,14 @@ class AddViewModel(
      * Matches: `http://abc.onion`, `https://abc.onion`, `abc.onion/path`, `abc.onion`.
      */
     internal fun isOnionUrl(raw: String): Boolean {
-        val host = runCatching { java.net.URL(raw).host }.getOrNull() ?: raw.substringBefore('/')
-        return host.trimEnd('/').endsWith(".onion", ignoreCase = true)
+        val url = if (urlSchemePattern.containsMatchIn(raw)) raw else "http://$raw"
+        val host = runCatching { URL(url).host }.getOrNull()
+        return host?.endsWith(".onion", ignoreCase = true) == true
     }
 
     private fun isValidUrl(url: String): Boolean = try {
-        val parsed = java.net.URL(url)
-        parsed.host.isNotEmpty() && !parsed.host.contains(' ')
-    } catch (_: Exception) { false }
-
-    private fun isValidHttpsUrl(url: String): Boolean = try {
-        val parsed = java.net.URL(url)
-        parsed.protocol == "https" && parsed.host.isNotEmpty() && !parsed.host.contains(' ')
+        val parsed = URL(url)
+        parsed.protocol in listOf("http", "https") && parsed.host.isNotBlank() && parsed.host.none { it.isWhitespace() }
     } catch (_: Exception) { false }
 
     private fun validate(): String? {

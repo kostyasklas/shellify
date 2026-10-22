@@ -8,7 +8,7 @@
 
 ## Purpose
 
-- Accept a URL, analyze its PWA manifest, and pre-fill name, icon, and colors.
+- Accept HTTP and HTTPS URLs, analyze their PWA manifests, and pre-fill name, icon, and colors. Explicit schemes are preserved; URLs without a scheme default to HTTPS, except `.onion` hosts, which default to HTTP.
 - Allow the user to override any auto-detected value.
 - Let the user pick an icon from the bundled Simple Icons catalogue or supply a custom URL.
 - Persist the result via `SaveWebApp` use case and return to the previous screen.

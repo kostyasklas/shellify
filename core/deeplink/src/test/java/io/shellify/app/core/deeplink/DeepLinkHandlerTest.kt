@@ -6,7 +6,6 @@ import io.mockk.mockk
 import io.shellify.app.util.JavaUrlSafeBase64Codec
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DeepLinkHandlerTest {
@@ -30,9 +29,86 @@ class DeepLinkHandlerTest {
     }
 
     @Test
-    fun `decodeUrl returns null for http url (non-https)`() {
+    fun `decodeUrl returns http url when valid`() {
         val encoded = DeepLinkHandler.encodeUrl("http://example.com", codec)
-        assertNull(DeepLinkHandler.decodeUrl(encoded, codec))
+        assertEquals("http://example.com", DeepLinkHandler.decodeUrl(encoded, codec))
+    }
+
+    @Test
+    fun `decodeUrl returns null for non-web schemes`() {
+        val urls = listOf(
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "ftp://example.com/file",
+            "data:text/html,test",
+        )
+        for (url in urls) {
+            val encoded = DeepLinkHandler.encodeUrl(url, codec)
+            assertNull(url, DeepLinkHandler.decodeUrl(encoded, codec))
+        }
+    }
+
+    @Test
+    fun `decodeUrl returns null for empty or invalid hosts`() {
+        val urls = listOf(
+            "http://",
+            "https://",
+            "http:///path",
+            "https:///path",
+            "http://?q=value",
+            "https://#fragment",
+            "http://:8080/path",
+            "https://user@:443/path",
+            "http://exa mple.com/path",
+            "https://   /path",
+            "http://[invalid]/path",
+        )
+        for (url in urls) {
+            val encoded = DeepLinkHandler.encodeUrl(url, codec)
+            assertNull(url, DeepLinkHandler.decodeUrl(encoded, codec))
+        }
+    }
+
+    @Test
+    fun `decodeUrl requires an explicit web scheme`() {
+        val urls = listOf(
+            "example.com",
+            "//example.com",
+            "http:example.com",
+            "https:/example.com",
+            " https://example.com",
+        )
+        for (url in urls) {
+            val encoded = DeepLinkHandler.encodeUrl(url, codec)
+            assertNull(url, DeepLinkHandler.decodeUrl(encoded, codec))
+        }
+    }
+
+    @Test
+    fun `decodeUrl preserves uppercase and mixed case web schemes`() {
+        val urls = listOf(
+            "HTTP://Example.COM/Path?q=hello world&lang=fr#Section",
+            "HTTPS://Example.COM/Path?q=hello world&lang=fr#Section",
+            "HtTp://example.com/app",
+            "HtTpS://example.com/app",
+        )
+        for (url in urls) {
+            val encoded = DeepLinkHandler.encodeUrl(url, codec)
+            assertEquals(url, DeepLinkHandler.decodeUrl(encoded, codec))
+        }
+    }
+
+    @Test
+    fun `decodeUrl accepts local http urls with ports`() {
+        val urls = listOf(
+            "http://localhost:8080/app?q=hello world",
+            "http://127.0.0.1:3000/app",
+            "http://[::1]:8080/app",
+        )
+        for (url in urls) {
+            val encoded = DeepLinkHandler.encodeUrl(url, codec)
+            assertEquals(url, DeepLinkHandler.decodeUrl(encoded, codec))
+        }
     }
 
     @Test
@@ -42,7 +118,6 @@ class DeepLinkHandlerTest {
 
     @Test
     fun `decodeUrl returns null for empty string`() {
-        // Empty base64 decodes to empty string, which doesn't start with https://
         assertNull(DeepLinkHandler.decodeUrl("", codec))
     }
 
@@ -60,6 +135,7 @@ class DeepLinkHandlerTest {
             "https://app.example.com",
             "https://sub.domain.io/path/to/app?tab=home",
             "https://example.com/app#section",
+            "http://example.com/path?q=hello world&lang=fr#section",
         )
         for (url in urls) {
             assertEquals(
@@ -128,10 +204,20 @@ class DeepLinkHandlerTest {
     }
 
     @Test
-    fun `parse returns null when decoded url is not https`() {
+    fun `parse accepts decoded http url`() {
         val encodedHttp = DeepLinkHandler.encodeUrl("http://example.com", codec)
         val uri = mockUri("shellify", "add", urlParam = encodedHttp, nameParam = "App")
-        assertNull(DeepLinkHandler.parse(uri, codec))
+        assertEquals("http://example.com" to "App", DeepLinkHandler.parse(uri, codec))
+    }
+
+    @Test
+    fun `parse rejects non-web urls and empty hosts`() {
+        val urls = listOf("file:///tmp/app", "javascript:alert(1)", "ftp://example.com", "http://", "https:///path")
+        for (url in urls) {
+            val encodedUrl = DeepLinkHandler.encodeUrl(url, codec)
+            val uri = mockUri("shellify", "add", urlParam = encodedUrl, nameParam = "App")
+            assertNull(url, DeepLinkHandler.parse(uri, codec))
+        }
     }
 
     @Test
@@ -146,6 +232,21 @@ class DeepLinkHandlerTest {
         )
         val result = DeepLinkHandler.parse(uri, codec)
         assertEquals("https://example.com" to "App", result)
+    }
+
+    @Test
+    fun `parse accepts http payload through https shellify app link`() {
+        val url = "HTTP://localhost:8080/app?q=hello world&lang=fr#section"
+        val encodedUrl = DeepLinkHandler.encodeUrl(url, codec)
+        val uri = mockUri("https", "shellify.app", path = "/add", urlParam = encodedUrl, nameParam = "Local App")
+        assertEquals(url to "Local App", DeepLinkHandler.parse(uri, codec))
+    }
+
+    @Test
+    fun `parse returns null for http shellify app link`() {
+        val encodedUrl = DeepLinkHandler.encodeUrl("http://example.com", codec)
+        val uri = mockUri("http", "shellify.app", path = "/add", urlParam = encodedUrl, nameParam = "App")
+        assertNull(DeepLinkHandler.parse(uri, codec))
     }
 
     @Test
@@ -173,10 +274,35 @@ class DeepLinkHandlerTest {
     }
 
     @Test
-    fun `parseOpen returns null for non-https decoded value`() {
+    fun `parseOpen accepts decoded http url`() {
         val encodedHttp = DeepLinkHandler.encodeUrl("http://example.com", codec)
         val uri = mockUri("shellify", "open", urlParam = encodedHttp)
+        assertEquals("http://example.com", DeepLinkHandler.parseOpen(uri, codec))
+    }
+
+    @Test
+    fun `parseOpen accepts http payload through https shellify app link`() {
+        val url = "HTTP://localhost:8080/app?q=hello world&lang=fr#section"
+        val encodedUrl = DeepLinkHandler.encodeUrl(url, codec)
+        val uri = mockUri("https", "shellify.app", path = "/open", urlParam = encodedUrl)
+        assertEquals(url, DeepLinkHandler.parseOpen(uri, codec))
+    }
+
+    @Test
+    fun `parseOpen returns null for http shellify app link`() {
+        val encodedUrl = DeepLinkHandler.encodeUrl("http://example.com", codec)
+        val uri = mockUri("http", "shellify.app", path = "/open", urlParam = encodedUrl)
         assertNull(DeepLinkHandler.parseOpen(uri, codec))
+    }
+
+    @Test
+    fun `parseOpen rejects non-web urls and empty hosts`() {
+        val urls = listOf("file:///tmp/app", "javascript:alert(1)", "ftp://example.com", "http://", "https:///path")
+        for (url in urls) {
+            val encodedUrl = DeepLinkHandler.encodeUrl(url, codec)
+            val uri = mockUri("shellify", "open", urlParam = encodedUrl)
+            assertNull(url, DeepLinkHandler.parseOpen(uri, codec))
+        }
     }
 
     @Test
@@ -205,10 +331,10 @@ class DeepLinkHandlerTest {
     }
 
     @Test
-    fun `buildOpen encoded url is rejected when original is http not https`() {
+    fun `buildOpen encoded http url can be decoded back to original url`() {
         val httpUrl = "http://example.com"
         val encodedParam = DeepLinkHandler.encodeUrl(httpUrl, codec)
         val decoded = DeepLinkHandler.decodeUrl(encodedParam, codec)
-        assertNull(decoded)
+        assertEquals(httpUrl, decoded)
     }
 }

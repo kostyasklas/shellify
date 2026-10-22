@@ -7,6 +7,8 @@ JVM tests that run without a device. The patterns here apply to **all** modules:
 
 Run: `./gradlew testDebugUnitTest`
 
+HTTP/HTTPS acceptance, URL normalization, and unsupported-scheme rejection are covered by `feature:add` and `core:deeplink` unit tests. HTTP is not a URL-validation error screenshot scenario.
+
 ---
 
 ## Directory layout (app/src/test only)

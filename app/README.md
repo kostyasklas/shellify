@@ -121,7 +121,7 @@ graph TD
 | Application ID | `app/build.gradle.kts` → `applicationId` | `io.shellify.app` |
 | Version name / code | `app/build.gradle.kts` → `defaultConfig` | Bump both for releases |
 | ProGuard rules | `app/proguard-rules.pro` | Applied in `release` build type only |
-| Network security | `res/xml/network_security_config.xml` | Restricts cleartext traffic |
+| Network security | `res/xml/network_security_config.xml` | Allows HTTP traffic for user-added sites; HTTPS certificate validation and System WebView mixed-content blocking remain enabled |
 | File sharing | `res/xml/file_paths.xml` | Required for backup file export via `FileProvider` |
 | Detekt | `config/detekt/detekt.yml` (root) | Applied via `detekt { }` block in `build.gradle.kts` |
 | Lint | `config/lint/lint.xml` (root) | Applied via `lint { lintConfig = ... }` |

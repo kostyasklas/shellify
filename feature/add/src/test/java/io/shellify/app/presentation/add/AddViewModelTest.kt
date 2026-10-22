@@ -196,23 +196,30 @@ class AddViewModelTest {
     }
 
     @Test
-    fun `analyze with http url sets urlError and does not proceed`() = runTest {
+    fun `analyze with http url preserves scheme and fetches metadata`() = runTest {
         val vm = newVm()
         vm.setUrl("http://example.com")
         vm.analyze()
         advanceUntilIdle()
-        assertNotNull(vm.uiState.value.urlError)
+        assertNull(vm.uiState.value.urlError)
+        assertEquals("http://example.com", vm.uiState.value.url)
+        coVerify(exactly = 1) { analyzer.analyze("http://example.com") }
+        coVerify(exactly = 1) { faviconFetcher.fetch(any(), "http://example.com", any()) }
     }
 
     @Test
-    fun `save with http url sets urlError and does not save`() = runTest {
+    fun `save with http url preserves scheme`() = runTest {
+        coEvery { getWebAppById(1L) } returns null
         val vm = newVm()
         vm.setName("App")
-        vm.setUrl("http://example.com")
+        vm.setUrl("  http://example.com/path?q=test#section  ")
         vm.save()
         advanceUntilIdle()
-        assertNotNull(vm.uiState.value.urlError)
-        assertFalse(vm.uiState.value.saved)
+        assertNull(vm.uiState.value.urlError)
+        assertTrue(vm.uiState.value.saved)
+        coVerify(exactly = 1) {
+            saveWebApp(match { it.url == "http://example.com/path?q=test#section" })
+        }
     }
 
     @Test
@@ -238,13 +245,133 @@ class AddViewModelTest {
     }
 
     @Test
-    fun `fetchIcon with http url sets urlError and does not fetch`() = runTest {
+    fun `fetchIcon with http url preserves scheme`() = runTest {
         val vm = newVm()
         vm.setUrl("http://example.com")
         vm.fetchIcon()
         advanceUntilIdle()
-        assertNotNull(vm.uiState.value.urlError)
+        assertNull(vm.uiState.value.urlError)
         assertFalse(vm.uiState.value.isFetchingIcon)
+        coVerify(exactly = 1) { analyzer.analyze("http://example.com") }
+        coVerify(exactly = 1) { faviconFetcher.fetch(any(), "http://example.com", any()) }
+    }
+
+    @Test
+    fun `run with local http url preserves host port and path`() {
+        val vm = newVm()
+        vm.setName("Local app")
+        vm.setUrl("http://192.168.1.10:8080/dashboard")
+        vm.run()
+        assertNull(vm.uiState.value.urlError)
+        assertEquals("http://192.168.1.10:8080/dashboard", vm.uiState.value.previewUrl)
+    }
+
+    @Test
+    fun `run normalizes only the scheme casing`() {
+        val urls = listOf(
+            "HTTP://Example.COM/Path?q=Value#Section" to "http://Example.COM/Path?q=Value#Section",
+            "HTTPS://Example.COM/Path?q=Value#Section" to "https://Example.COM/Path?q=Value#Section",
+            "HtTp://Example.COM:8080/Path" to "http://Example.COM:8080/Path",
+            "hTtPs://Example.COM/Path" to "https://Example.COM/Path",
+        )
+        for ((url, normalized) in urls) {
+            val vm = newVm()
+            vm.setName("App")
+            vm.setUrl(url)
+            vm.run()
+            assertNull(vm.uiState.value.urlError)
+            assertEquals(normalized, vm.uiState.value.previewUrl)
+        }
+    }
+
+    @Test
+    fun `run defaults bare urls with nested links to https`() {
+        val urls = listOf(
+            "example.com/go?next=https://other.example/Path#Return",
+            "example.com/go/http://other.example/Path",
+            "localhost:8080/go?next=http://127.0.0.1:3000/Path",
+        )
+        for (url in urls) {
+            val vm = newVm()
+            vm.setName("App")
+            vm.setUrl(url)
+            vm.run()
+            assertNull(vm.uiState.value.urlError)
+            assertEquals("https://$url", vm.uiState.value.previewUrl)
+        }
+    }
+
+    @Test
+    fun `analyze lowercases prefilled scheme before loading metadata and icons`() = runTest {
+        coEvery { analyzer.analyze(any()) } returns PwaManifest()
+        val urls = listOf(
+            "HTTP://Example.COM/Path?q=Value#Section" to "http://Example.COM/Path?q=Value#Section",
+            "HTTPS://Example.COM/Path?q=Value#Section" to "https://Example.COM/Path?q=Value#Section",
+        )
+        for ((url, normalized) in urls) {
+            val vm = newVm(url = url)
+            vm.analyze()
+            advanceUntilIdle()
+            assertNull(vm.uiState.value.urlError)
+            assertEquals(normalized, vm.uiState.value.url)
+            coVerify(exactly = 1) { analyzer.analyze(normalized) }
+            coVerify(exactly = 1) { faviconFetcher.fetch(any(), normalized, any()) }
+        }
+    }
+
+    @Test
+    fun `fetchIcon lowercases scheme before loading metadata and icons`() = runTest {
+        coEvery { analyzer.analyze(any()) } returns PwaManifest()
+        val urls = listOf(
+            "HTTP://Example.COM/Path?q=Value#Section" to "http://Example.COM/Path?q=Value#Section",
+            "HTTPS://Example.COM/Path?q=Value#Section" to "https://Example.COM/Path?q=Value#Section",
+        )
+        for ((url, normalized) in urls) {
+            val vm = newVm()
+            vm.setUrl(url)
+            vm.fetchIcon()
+            advanceUntilIdle()
+            assertNull(vm.uiState.value.urlError)
+            assertFalse(vm.uiState.value.isFetchingIcon)
+            coVerify(exactly = 1) { analyzer.analyze(normalized) }
+            coVerify(exactly = 1) { faviconFetcher.fetch(any(), normalized, any()) }
+        }
+    }
+
+    @Test
+    fun `save lowercases scheme without changing the rest of the url`() = runTest {
+        coEvery { getWebAppById(1L) } returns null
+        val vm = newVm()
+        vm.setName("App")
+        vm.setUrl("HTTPS://Example.COM/Path?q=Value#Section")
+        vm.save()
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.saved)
+        assertNull(vm.uiState.value.urlError)
+        coVerify(exactly = 1) {
+            saveWebApp(match { it.url == "https://Example.COM/Path?q=Value#Section" })
+        }
+    }
+
+    @Test
+    fun `run rejects non-web schemes and missing or invalid hosts`() {
+        val urls = listOf(
+            "ftp://example.com",
+            "file:///etc/hosts",
+            "javascript:alert(1)",
+            "data:text/html,test",
+            "http://",
+            "https://",
+            "http://invalid host",
+        )
+        for (url in urls) {
+            val vm = newVm()
+            vm.setName("App")
+            vm.setUrl(url)
+            vm.run()
+            assertNotNull("Expected URL rejection: $url", vm.uiState.value.urlError)
+            assertNull(vm.uiState.value.previewUrl)
+        }
     }
 
     // ── save / validate edge cases ─────────────────────────────────────────────
@@ -259,6 +386,7 @@ class AddViewModelTest {
         advanceUntilIdle()
         assertTrue(vm.uiState.value.saved)
         assertNull(vm.uiState.value.urlError)
+        coVerify(exactly = 1) { saveWebApp(match { it.url == "https://example.com" }) }
     }
 
     @Test

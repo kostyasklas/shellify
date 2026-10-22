@@ -1,0 +1,50 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, feat/http-sites]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-android
+      - name: Build APK
+        run: ./gradlew :app:assembleDebug
+      - uses: actions/upload-artifact@v7
+        with:
+          name: shellify-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  checks:
+    name: Lint and Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-android
+      - name: Run checks
+        run: ./gradlew detekt lintDebug testDebugUnitTest --continue
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: debug-check-reports
+          path: |
+            **/build/reports/detekt/
+            **/build/reports/lint-results-*.html
+            **/build/reports/tests/
+          if-no-files-found: ignore
+          retention-days: 7

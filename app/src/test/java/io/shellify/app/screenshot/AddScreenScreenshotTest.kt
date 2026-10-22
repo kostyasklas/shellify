@@ -90,20 +90,6 @@ class AddScreenScreenshotTest {
     }
 
     @Test
-    fun urlError_httpScheme() {
-        composeTestRule.setContent {
-            ShellifyTheme {
-                AddScreen(
-                    viewModel = buildVm(AddUiState(url = "http://example.com", urlError = "Use HTTPS instead of HTTP")),
-                    onSaved = {},
-                    onBack = {},
-                )
-            }
-        }
-        composeTestRule.onRoot().captureRoboImage(roborazziOptions = screenshotOptions)
-    }
-
-    @Test
     fun urlError_blankUrl() {
         composeTestRule.setContent {
             ShellifyTheme {

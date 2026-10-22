@@ -3,6 +3,7 @@ package io.shellify.app.core.deeplink
 import android.net.Uri
 import io.shellify.app.core.security.Base64Codec
 import io.shellify.app.core.security.UrlSafeBase64Codec
+import java.net.URL
 
 object DeepLinkHandler {
 
@@ -33,11 +34,6 @@ object DeepLinkHandler {
             .appendQueryParameter("name", name)
             .build().toString()
 
-    /**
-     * Parses a shellify://open?url=<b64> or https://shellify.app/open?url=<b64> URI.
-     * Returns the decoded https URL, or null if the URI format is invalid or the decoded value is not https.
-     * The security gate (decodeUrl returns null for non-https values) is inherited from decodeUrl.
-     */
     fun parseOpen(uri: Uri, codec: Base64Codec = UrlSafeBase64Codec): String? {
         val isCustom = uri.scheme == "shellify" && uri.host == "open"
         val isHttps = uri.scheme == "https" && uri.host == "shellify.app" &&
@@ -47,10 +43,6 @@ object DeepLinkHandler {
         return decodeUrl(rawUrl, codec)
     }
 
-    /**
-     * Builds a shellify://open?url=<b64> URI encoding the given https URL.
-     * Does not include a name parameter — URL-only format per design decision D-01.
-     */
     fun buildOpen(url: String, codec: Base64Codec = UrlSafeBase64Codec): String =
         Uri.Builder().scheme("shellify").authority("open")
             .appendQueryParameter("url", encodeUrl(url, codec))
@@ -59,13 +51,13 @@ object DeepLinkHandler {
     internal fun encodeUrl(url: String, codec: Base64Codec = UrlSafeBase64Codec): String =
         codec.encode(url.toByteArray())
 
-    /**
-     * Decodes a base64url-encoded URL and returns it only if it uses https.
-     * Returns null on decode failure or when the decoded value is not an https URL.
-     */
     internal fun decodeUrl(raw: String, codec: Base64Codec = UrlSafeBase64Codec): String? =
         runCatching {
             val decoded = String(codec.decode(raw))
-            decoded.takeIf { it.startsWith("https://") }
+            val url = URL(decoded)
+            decoded.takeIf {
+                (it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true)) &&
+                    url.host.isNotBlank() && url.host.none { character -> character.isWhitespace() }
+            }
         }.getOrNull()
 }

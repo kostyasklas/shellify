@@ -26,22 +26,13 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
-import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
 
-/**
- * Verifies .onion URL exemptions in AddViewModel (Plan 02-05 Task 3).
- *
- * Four behaviours:
- *  A1: http://host.onion is accepted — does NOT set urlError = add_url_error_http
- *  A2: http://example.com (non-onion) continues to set urlError (regression guard)
- *  A3: bare host.onion (no scheme) is normalized to http://... (NOT https://)
- *  A4: https://host.onion (explicit https) is accepted without error
- */
 @OptIn(ExperimentalCoroutinesApi::class)
 class AddViewModelOnionTest {
 
@@ -94,11 +85,6 @@ class AddViewModelOnionTest {
         context = context,
     )
 
-    /**
-     * A1: http://host.onion URL should be accepted as-is.
-     * The http-not-allowed error must NOT be raised (onion hosts use Tor circuit encryption).
-     * Set a name so save() can proceed through URL validation to reach name checks.
-     */
     @Test
     fun `http onion url is accepted without urlError`() = runTest {
         val vm = newVm()
@@ -109,29 +95,42 @@ class AddViewModelOnionTest {
         vm.save()
         advanceUntilIdle()
 
-        // urlError must be null — onion HTTP is explicitly exempt from https-only rule
         assertNull("http .onion must not set urlError", vm.uiState.value.urlError)
     }
 
-    /**
-     * A2: http://example.com (non-onion host) must still set urlError — regression guard.
-     */
     @Test
-    fun `http non-onion url still sets urlError`() = runTest {
+    fun `bare onion url defaults to http for preview`() {
         val vm = newVm()
-        vm.setUrl("http://example.com")
-        advanceUntilIdle()
+        vm.setName("DarkSite")
+        vm.setUrl("abcdef1234567890.onion:8080/path")
+        vm.run()
 
-        vm.save()
-        advanceUntilIdle()
-
-        assertNotNull("http non-onion must set urlError", vm.uiState.value.urlError)
+        assertNull(vm.uiState.value.urlError)
+        assertEquals("http://abcdef1234567890.onion:8080/path", vm.uiState.value.previewUrl)
     }
 
     /**
      * A3: Bare *.onion (no scheme) should be normalized to http:// — NOT https://.
      * Onion services rarely have valid HTTPS certificates; defaulting to http keeps them working.
      */
+    @Test
+    fun `bare onion urls with nested links default to http`() {
+        val urls = listOf(
+            "abcdef1234567890.onion/go?next=https://example.com/Path",
+            "abcdef1234567890.onion/go/http://example.com/Path",
+            "abcdef1234567890.onion:8080/go?next=http://other.onion/Path#Return",
+        )
+        for (url in urls) {
+            val vm = newVm()
+            vm.setName("DarkSite")
+            vm.setUrl(url)
+            assertTrue(vm.isOnionUrl(url))
+            vm.run()
+            assertNull(vm.uiState.value.urlError)
+            assertEquals("http://$url", vm.uiState.value.previewUrl)
+        }
+    }
+
     @Test
     fun `bare onion hostname is classified as onion url`() {
         val vm = newVm()
